@@ -160,6 +160,10 @@ int libfvde_encrypted_metadata_initialize(
 
 		goto on_error;
 	}
+
+	(*encrypted_metadata)->encryption_context_plist_data = NULL;
+	(*encrypted_metadata)->encryption_context_plist_data_size = 0;
+
 	return( 1 );
 
 on_error:
@@ -258,6 +262,13 @@ int libfvde_encrypted_metadata_free(
 		}
 		memory_free(
 		 *encrypted_metadata );
+
+		if ((*encrypted_metadata)->encryption_context_plist_data != NULL)
+		{
+			free((*encrypted_metadata)->encryption_context_plist_data);
+			(*encrypted_metadata)->encryption_context_plist_data = NULL;
+			(*encrypted_metadata)->encryption_context_plist_data_size = 0;
+		}
 
 		*encrypted_metadata = NULL;
 	}
@@ -1679,57 +1690,58 @@ int libfvde_encrypted_metadata_read_type_0x0019(
 	}
 	xml_plist_data = &( block_data[ xml_plist_data_offset - 64 ] );
 
-	if( ( xml_plist_data[ 0 ] == (uint8_t) '<' )
-	 && ( xml_plist_data[ 1 ] == (uint8_t) 'd' )
-	 && ( xml_plist_data[ 2 ] == (uint8_t) 'i' )
-	 && ( xml_plist_data[ 3 ] == (uint8_t) 'c' )
-	 && ( xml_plist_data[ 4 ] == (uint8_t) 't' ) )
+	if (encrypted_metadata->encryption_context_plist_file_is_set == 0)
 	{
-		if( xml_plist_data_size > ( block_data_size - xml_plist_data_offset ) )
+		if ((xml_plist_data[0] == (uint8_t) '<')
+			&& (xml_plist_data[1] == (uint8_t) 'd')
+			&& (xml_plist_data[2] == (uint8_t) 'i')
+			&& (xml_plist_data[3] == (uint8_t) 'c')
+			&& (xml_plist_data[4] == (uint8_t) 't'))
 		{
-			libcerror_error_set(
-			 error,
-			 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-			 LIBCERROR_RUNTIME_ERROR_VALUE_OUT_OF_BOUNDS,
-			 "%s: invalid XML plist data size value out of bounds.",
-			 function );
-
-			return( -1 );
-		}
+			if (xml_plist_data_size > (block_data_size - xml_plist_data_offset))
+			{
+				result = -1;
+			}
+			else
+			{
 #if defined( HAVE_DEBUG_OUTPUT )
-		if( libcnotify_verbose != 0 )
-		{
-			libcnotify_printf(
-			 "%s: XML:\n%s\n",
-			 function,
-			 (char *) xml_plist_data );
-		}
+				if (libcnotify_verbose != 0)
+				{
+					libcnotify_printf(
+						"%s: XML:\n%s\n",
+						function,
+						(char*)xml_plist_data);
+				}
 #endif
-		if( encrypted_metadata->encryption_context_plist_file_is_set == 0 )
+				result = libfvde_encryption_context_plist_set_data(encrypted_metadata->encryption_context_plist, xml_plist_data,
+																   xml_plist_data_size,
+																   error );
+			}
+		}
+		else
 		{
-			result = libfvde_encryption_context_plist_set_data(
-				  encrypted_metadata->encryption_context_plist,
-				  xml_plist_data,
-				  xml_plist_data_size,
-				  error );
+			result = -1;
+		}
 
-			if( result == -1 )
-			{
-				libcerror_error_set(
-				 error,
-				 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-				 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-				 "%s: unable to set encryption context plist data.",
-				 function );
+		if (result != 1 && encrypted_metadata->encryption_context_plist_data != NULL
+			&& encrypted_metadata->encryption_context_plist_data_size != 0)
+		{
+			result = libfvde_encryption_context_plist_set_data(encrypted_metadata->encryption_context_plist,
+															   encrypted_metadata->encryption_context_plist_data,
+															   encrypted_metadata->encryption_context_plist_data_size,
+															   error );
+		}
 
-				return( -1 );
-			}
-			else if( result != 0 )
-			{
-				encrypted_metadata->encryption_context_plist_file_is_set = 1;
-			}
+		if (result == 1)
+		{
+			encrypted_metadata->encryption_context_plist_file_is_set = 1;
+		}
+		else
+		{
+			return -1;
 		}
 	}
+
 /* TODO find com.apple.corestorage.lvf.encryption.context/WrappedVolumeKeys/?/BlockAlgorithm */
 #if defined( HAVE_DEBUG_OUTPUT )
 	if( libcnotify_verbose != 0 )
@@ -4347,202 +4359,205 @@ int libfvde_encrypted_metadata_read(
 			     8192,
 			     error ) != 1 )
 			{
-				libcerror_error_set(
-				 error,
-				 LIBCERROR_ERROR_DOMAIN_IO,
-				 LIBCERROR_IO_ERROR_READ_FAILED,
-				 "%s: unable to read metadata block.",
-				 function );
+				//libcerror_error_set(
+				// error,
+				// LIBCERROR_ERROR_DOMAIN_IO,
+				// LIBCERROR_IO_ERROR_READ_FAILED,
+				// "%s: unable to read metadata block.",
+				// function );
 
-				goto on_error;
+				//goto on_error;
 			}
-			if( metadata_block->is_lvf_wiped == 0 )
+			else
 			{
+				if (metadata_block->is_lvf_wiped == 0)
+				{
 #if defined( HAVE_DEBUG_OUTPUT )
-				if( ( libcnotify_verbose != 0 )
-				 && ( metadata_block->serial_number != io_handle->serial_number ) )
-				{
-					libcnotify_printf(
-					 "%s: mismatch in serial number ( 0x%08" PRIx32 " != 0x%08" PRIx32 " ).\n",
-					 function,
-					 metadata_block->serial_number,
-					 io_handle->serial_number );
-				}
+					if ((libcnotify_verbose != 0)
+						&& (metadata_block->serial_number != io_handle->serial_number))
+					{
+						libcnotify_printf(
+							"%s: mismatch in serial number ( 0x%08" PRIx32 " != 0x%08" PRIx32 " ).\n",
+							function,
+							metadata_block->serial_number,
+							io_handle->serial_number);
+					}
 #endif
-				switch( metadata_block->type )
-				{
+					switch (metadata_block->type)
+					{
 					case 0x0012:
 						result = libfvde_encrypted_metadata_read_type_0x0012(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0013:
 						result = libfvde_encrypted_metadata_read_type_0x0013(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0014:
 						result = libfvde_encrypted_metadata_read_type_0x0014(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0016:
 						result = libfvde_encrypted_metadata_read_type_0x0016(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0017:
 						result = libfvde_encrypted_metadata_read_type_0x0017(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0018:
 						result = libfvde_encrypted_metadata_read_type_0x0018(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0019:
 						result = libfvde_encrypted_metadata_read_type_0x0019(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x001a:
 						result = libfvde_encrypted_metadata_read_type_0x001a(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x001c:
 						result = libfvde_encrypted_metadata_read_type_0x001c(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x001d:
 						result = libfvde_encrypted_metadata_read_type_0x001d(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0021:
 						result = libfvde_encrypted_metadata_read_type_0x0021(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0022:
 						result = libfvde_encrypted_metadata_read_type_0x0022(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0025:
 						result = libfvde_encrypted_metadata_read_type_0x0025(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0105:
 						result = libfvde_encrypted_metadata_read_type_0x0105(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0304:
 						result = libfvde_encrypted_metadata_read_type_0x0304(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0305:
 						result = libfvde_encrypted_metadata_read_type_0x0305(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  metadata_block->group,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							metadata_block->group,
+							error);
 						break;
 
 					case 0x0404:
 						result = libfvde_encrypted_metadata_read_type_0x0404(
-							  encrypted_metadata,
-							  io_handle,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  error );
+							encrypted_metadata,
+							io_handle,
+							metadata_block->data,
+							metadata_block->data_size,
+							error);
 						break;
 
 					case 0x0405:
 						result = libfvde_encrypted_metadata_read_type_0x0405(
-							  encrypted_metadata,
-							  io_handle,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  metadata_block->group,
-							  error );
+							encrypted_metadata,
+							io_handle,
+							metadata_block->data,
+							metadata_block->data_size,
+							metadata_block->group,
+							error);
 						break;
 
 					case 0x0505:
 						result = libfvde_encrypted_metadata_read_type_0x0505(
-							  encrypted_metadata,
-							  metadata_block->data,
-							  metadata_block->data_size,
-							  metadata_block->group,
-							  error );
+							encrypted_metadata,
+							metadata_block->data,
+							metadata_block->data_size,
+							metadata_block->group,
+							error);
 						break;
 
 					default:
 						result = 0;
 						break;
-				}
-				if( result == -1 )
-				{
-					libcerror_error_set(
-					 error,
-					 LIBCERROR_ERROR_DOMAIN_IO,
-					 LIBCERROR_IO_ERROR_READ_FAILED,
-					 "%s: unable to read metadata block type 0x%04" PRIx16 ".",
-					 function,
-					 metadata_block->type );
+					}
+					if (result == -1)
+					{
+						libcerror_error_set(
+							error,
+							LIBCERROR_ERROR_DOMAIN_IO,
+							LIBCERROR_IO_ERROR_READ_FAILED,
+							"%s: unable to read metadata block type 0x%04" PRIx16 ".",
+							function,
+							metadata_block->type);
 
-					goto on_error;
+						goto on_error;
+					}
 				}
 			}
 		}

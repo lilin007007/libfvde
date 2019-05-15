@@ -96,6 +96,11 @@ int libfvde_encryption_context_plist_initialize(
 
 		return( -1 );
 	}
+
+	memset(internal_plist->logical_volume_family_uuid, 0, sizeof(internal_plist->logical_volume_family_uuid));
+
+	internal_plist->logical_volume_family_uuid_is_set = 0;
+
 	*plist = (libfvde_encryption_context_plist_t *) internal_plist;
 
 	return( 1 );
@@ -892,6 +897,7 @@ int libfvde_encryption_context_plist_read_xml(
 	libfvde_internal_encryption_context_plist_t *internal_plist = NULL;
 	libfplist_property_t *encryption_context_property           = NULL;
 	libfplist_property_t *root_property                         = NULL;
+	libfplist_property_t* sub_property							= NULL;
 	static char *function                                       = "libfvde_encryption_context_plist_read_xml";
 	int result                                                  = 0;
 
@@ -1126,6 +1132,14 @@ int libfvde_encryption_context_plist_read_xml(
 
 		goto on_error;
 	}
+	
+	if (libfplist_property_get_sub_property_by_utf8_name(root_property, (uint8_t*) "com.apple.corestorage.lvf.uuid", 30, &sub_property, error) == 1
+		&& libfplist_property_value_uuid_string_copy_to_byte_stream(sub_property, internal_plist->logical_volume_family_uuid, 16, error) == 1)
+	{
+		internal_plist->logical_volume_family_uuid_is_set = 1;
+		libfplist_property_free(&sub_property, error);
+	}
+	
 	if( encryption_context_property != root_property )
 	{
 		if( libfplist_property_free(

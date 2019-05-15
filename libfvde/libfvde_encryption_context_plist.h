@@ -57,6 +57,14 @@ struct libfvde_internal_encryption_context_plist
 	 */
 	libfplist_property_list_t *property_list;
 
+	/*The LVF uuid
+	*/
+	uint8_t logical_volume_family_uuid[16];
+
+	/*The LVF uuid is set
+	*/
+	uint8_t logical_volume_family_uuid_is_set;
+
         /* The XML plist conversion info property
 	 */
 	libfplist_property_t *conversion_info_property;

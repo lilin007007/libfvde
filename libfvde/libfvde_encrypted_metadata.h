@@ -111,6 +111,10 @@ struct libfvde_encrypted_metadata
 	/* The data area descriptors
 	 */
 	libcdata_array_t *data_area_descriptors;
+
+	uint8_t* encryption_context_plist_data;
+
+	uint32_t encryption_context_plist_data_size;
 };
 
 int libfvde_encrypted_metadata_initialize(

@@ -25,6 +25,7 @@
 #include <narrow_string.h>
 #include <types.h>
 #include <wide_string.h>
+#include <stdio.h>
 
 #include "libfvde_codepage.h"
 #include "libfvde_debug.h"
@@ -2028,9 +2029,11 @@ int libfvde_volume_open_read_keys_from_encrypted_metadata(
 
 			goto on_error;
 		}
+		
+		libfvde_internal_encryption_context_plist_t* internal_plist = encrypted_metadata->encryption_context_plist;
 		if( memory_copy(
 		     &( tweak_key_data[ 16 ] ),
-		     encrypted_metadata->logical_volume_family_identifier,
+		     ( (internal_plist != NULL && internal_plist->logical_volume_family_uuid_is_set != 0) ? internal_plist->logical_volume_family_uuid : encrypted_metadata->logical_volume_family_identifier),
 		     16 ) == NULL )
 		{
 			libcerror_error_set(
@@ -3539,23 +3542,23 @@ int libfvde_volume_set_utf8_password(
 		internal_volume->io_handle->user_password      = NULL;
 		internal_volume->io_handle->user_password_size = 0;
 	}
-	if( libuna_byte_stream_size_from_utf8(
-	     utf8_string,
-	     utf8_string_length,
-	     LIBFVDE_CODEPAGE_US_ASCII,
-	     &( internal_volume->io_handle->user_password_size ),
-	     error ) != 1 )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to set password size.",
-		 function );
-
-		goto on_error;
-	}
-	internal_volume->io_handle->user_password_size += 1;
+	//if( libuna_byte_stream_size_from_utf8(
+	//     utf8_string,
+	//     utf8_string_length,
+	//     LIBFVDE_CODEPAGE_US_ASCII,
+	//     &( internal_volume->io_handle->user_password_size ),
+	//     error ) != 1 )
+	//{
+	//	libcerror_error_set(
+	//	 error,
+	//	 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+	//	 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
+	//	 "%s: unable to set password size.",
+	//	 function );
+	//
+	//	goto on_error;
+	//}
+	internal_volume->io_handle->user_password_size = utf8_string_length + 1;
 
 	internal_volume->io_handle->user_password = (uint8_t *) memory_allocate(
 	                                                         sizeof( uint8_t ) * internal_volume->io_handle->user_password_size );
@@ -3571,23 +3574,25 @@ int libfvde_volume_set_utf8_password(
 
 		goto on_error;
 	}
-	if( libuna_byte_stream_copy_from_utf8(
-	     internal_volume->io_handle->user_password,
-	     internal_volume->io_handle->user_password_size,
-	     LIBFVDE_CODEPAGE_US_ASCII,
-	     utf8_string,
-	     utf8_string_length,
-	     error ) != 1 )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to copy user password.",
-		 function );
 
-		goto on_error;
-	}
+	memory_copy(internal_volume->io_handle->user_password, utf8_string, utf8_string_length);
+//	if( libuna_byte_stream_copy_from_utf8(
+//	     internal_volume->io_handle->user_password,
+//	     internal_volume->io_handle->user_password_size,
+//	     LIBFVDE_CODEPAGE_US_ASCII,
+//	     utf8_string,
+//	     utf8_string_length,
+//	     error ) != 1 )
+//	{
+//		libcerror_error_set(
+//		 error,
+//		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+//		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
+//		 "%s: unable to copy user password.",
+//		 function );
+//
+//		goto on_error;
+//	}
 	internal_volume->io_handle->user_password[ internal_volume->io_handle->user_password_size - 1 ] = 0;
 
 	internal_volume->io_handle->user_password_is_set = 1;
@@ -4399,3 +4404,73 @@ on_error:
 	return( -1 );
 }
 
+int libfvde_volume_read_encryption_context_plist(
+	libfvde_volume_t* volume,
+	const char* filename,
+	libcerror_error_t** error)
+{
+	FILE* f = NULL;
+	long size = 0;
+	libfvde_internal_volume_t* internal_volume = (libfvde_internal_volume_t*)volume;
+	libfvde_encrypted_metadata_t* primary = NULL, * secondary = NULL;
+
+	if (internal_volume == NULL || filename == NULL)
+	{
+		return -1;
+	}
+
+	primary = internal_volume->primary_encrypted_metadata;
+	secondary = internal_volume->secondary_encrypted_metadata;
+
+	if (primary == NULL || secondary == NULL)
+	{
+		return -1;
+	}
+
+	if (primary->encryption_context_plist_data != NULL)
+	{
+		return -1;
+	}
+
+	f = fopen(filename, "rb");
+	if (f == NULL)
+	{
+		return -1;
+	}
+
+	fseek(f, 0, SEEK_END);
+	size = ftell(f);
+	if (size == 0)
+	{
+		return -1;
+	}
+
+	primary->encryption_context_plist_data = (uint8_t*)malloc(size);
+	if (primary->encryption_context_plist_data == NULL)
+	{
+		return -1;
+	}
+
+	secondary->encryption_context_plist_data = (uint8_t*)malloc(size);
+	if (secondary->encryption_context_plist_data == NULL)
+	{
+		free(primary->encryption_context_plist_data);
+		primary->encryption_context_plist_data = NULL;
+		return -1;
+	}
+
+	fseek(f, 0, SEEK_SET);
+	if (fread(primary->encryption_context_plist_data, size, 1, f) < 1)
+	{
+		free(primary->encryption_context_plist_data);
+		primary->encryption_context_plist_data = NULL;
+		return -1;
+	}
+
+	memcpy(secondary->encryption_context_plist_data, primary->encryption_context_plist_data, size);
+
+	primary->encryption_context_plist_data_size = size;
+	secondary->encryption_context_plist_data_size = size;
+
+	return 1;
+}

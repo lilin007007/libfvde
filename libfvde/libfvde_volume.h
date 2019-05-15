@@ -353,6 +353,12 @@ int libfvde_volume_read_encrypted_root_plist_file_io_handle(
      libbfio_handle_t *file_io_handle,
      libcerror_error_t **error );
 
+LIBFVDE_EXTERN \
+int libfvde_volume_read_encryption_context_plist(
+	libfvde_volume_t* volume,
+	const char* filename,
+	libcerror_error_t** error);
+
 #if defined( __cplusplus )
 }
 #endif
